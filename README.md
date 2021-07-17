@@ -1,3 +1,8 @@
+This is a fork of Geyser which implements saving user credentials. Upstream devs have decided not to implement this feature for security concerns due to 
+credentials being saved on the server in plain-text. This fork caters for people who know the risks of such a feature and wish to use it regardless.
+
+Saved accounts are stored in an SQLite3 database on the server. Users are identified using their DeviceID which is associated with their login details.
+
 <img src="https://geysermc.org/img/geyser-1760-860.png" alt="Geyser" width="600"/>
 
 [![forthebadge made-with-java](https://forthebadge.com/images/badges/made-with-java.svg)](https://java.com/)
