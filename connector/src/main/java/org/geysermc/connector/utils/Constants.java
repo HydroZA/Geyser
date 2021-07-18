@@ -35,6 +35,9 @@ public final class Constants {
     public static final String NEWS_OVERVIEW_URL = "https://api.geysermc.org/v1/news";
     public static final String NEWS_PROJECT_NAME = "geyser";
 
+    // URI of the SQLite3 database used for saving user accounts
+    public static final String SAVED_ACCOUNTS_DB = "jdbc:sqlite:savedaccounts.db";
+
     static {
         URI wsUri = null;
         try {

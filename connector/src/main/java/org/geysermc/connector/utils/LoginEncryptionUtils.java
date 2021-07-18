@@ -30,11 +30,15 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.JsonNodeType;
 import com.github.steveice10.mc.auth.service.MsaAuthenticationService;
+import com.google.gson.JsonArray;
 import com.nimbusds.jose.JWSObject;
 import com.nukkitx.network.util.Preconditions;
 import com.nukkitx.protocol.bedrock.packet.LoginPacket;
 import com.nukkitx.protocol.bedrock.packet.ServerToClientHandshakePacket;
 import com.nukkitx.protocol.bedrock.util.EncryptionUtils;
+import it.unimi.dsi.fastutil.Pair;
+import net.minidev.json.JSONArray;
+import org.checkerframework.checker.nullness.qual.NonNull;
 import org.geysermc.connector.GeyserConnector;
 import org.geysermc.connector.configuration.GeyserConfiguration;
 import org.geysermc.connector.network.session.GeyserSession;
@@ -48,12 +52,17 @@ import org.geysermc.cumulus.response.ModalFormResponse;
 import org.geysermc.cumulus.response.SimpleFormResponse;
 
 import javax.crypto.SecretKey;
+import java.io.BufferedWriter;
+import java.io.FileWriter;
 import java.io.IOException;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.PublicKey;
 import java.security.interfaces.ECPublicKey;
 import java.security.spec.ECGenParameterSpec;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.SQLException;
 import java.util.UUID;
 
 public class LoginEncryptionUtils {
@@ -179,12 +188,36 @@ public class LoginEncryptionUtils {
     }
 
     public static void buildAndShowLoginWindow(GeyserSession session) {
+        String deviceID = session.getClientData().getDeviceId();
+        // Check if the user has saved account details with us
+        System.out.println("Checking if user has saved account details...");
+        boolean isKnownUser = SavedAccountDatabase
+                .getInstance()
+                .checkIfUserHasSavedAccount(
+                        deviceID
+                );
+
+        if (isKnownUser) {
+            System.out.println("Authenticating with saved account");
+            Pair<String, String> accountDeets = SavedAccountDatabase
+                    .getInstance()
+                    .getSavedAccountDetails(
+                            deviceID
+                    );
+            session.authenticate(accountDeets.left(), accountDeets.right());
+            return;
+        }
+        else {
+            System.out.println("User is unknown, proceeding with normal login procedure");
+        }
+
         // Set DoDaylightCycle to false so the time doesn't accelerate while we're here
         session.setDaylightCycle(false);
 
         GeyserConfiguration config = session.getConnector().getConfig();
         boolean isPasswordAuthEnabled = config.getRemote().isPasswordAuthentication();
 
+        //LOGIN FORM GENERATION
         session.sendForm(
                 SimpleForm.builder()
                         .translator(LanguageUtils::getPlayerLocaleString, session.getLocale())
@@ -222,6 +255,20 @@ public class LoginEncryptionUtils {
                         }));
     }
 
+    private Connection connectToUserAccountDatabase() {
+        Connection conn = null;
+        try {
+            // create a connection to the database
+            conn = DriverManager.getConnection(Constants.SAVED_ACCOUNTS_DB);
+            System.out.println("Connection to SQLite has been established.");
+        } catch (SQLException e) {
+            e.printStackTrace();
+            System.exit(1);
+        }
+        return conn;
+    }
+
+    // THIS IS THE FORM SHOWN WHEN MOJANG ACCOUNT IS SELECTED
     public static void buildAndShowLoginDetailsWindow(GeyserSession session) {
         session.sendForm(
                 CustomForm.builder()
@@ -230,14 +277,35 @@ public class LoginEncryptionUtils {
                         .label("geyser.auth.login.form.details.desc")
                         .input("geyser.auth.login.form.details.email", "account@geysermc.org", "")
                         .input("geyser.auth.login.form.details.pass", "123456", "")
+                        .toggle("Remember Me")
                         .responseHandler((form, responseData) -> {
                             CustomFormResponse response = form.parseResponse(responseData);
+                       //     System.out.println(responseData);
+
                             if (!response.isCorrect()) {
                                 buildAndShowLoginDetailsWindow(session);
                                 return;
                             }
 
-                            session.authenticate(response.next(), response.next());
+                            String username = response.next();
+                            String password = response.next();
+                            boolean rememberMe = response.next();
+
+                            if (rememberMe) {
+                                // Get device ID to identify user
+                                String deviceID = session.getClientData().getDeviceId();
+
+                                // Write the users details to the database
+                                SavedAccountDatabase
+                                        .getInstance()
+                                        .saveNewUserAccount(
+                                                username,
+                                                password,
+                                                deviceID
+                                        );
+                            }
+
+                            session.authenticate(username, password);
                         }));
     }
 
